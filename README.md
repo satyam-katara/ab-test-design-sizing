@@ -98,6 +98,7 @@ This project sets up the test properly *before* any data is collected, then prov
 11. [How to Run](#how-to-run)
 12. [Limitations](#limitations)
 13. [Conclusion](#conclusion)
+14. [Author](#author)
 
 ---
 
@@ -340,11 +341,9 @@ ab-test-design-sizing/
 
 **1. Get the project files**
 
-After publishing the repository on GitHub, clone it with your repository URL:
-
 ```bash
-git clone https://github.com/<your-username>/<your-repository>.git
-cd <your-repository>
+git clone https://github.com/satyam-katara/ab-test-design-sizing.git
+cd ab-test-design-sizing
 ```
 
 If you already have the project folder locally, open that folder and continue with the next step.
@@ -394,6 +393,16 @@ Open `ab_test_sizing.ipynb` and run the cells from top to bottom.
 A good A/B test is decided before the data arrives. This project covers the full path: sizing the test, generating data, running the hypothesis test, checking it with 10,000 simulations, and showing how peeking breaks it.
 
 The main lesson: comparing two conversion rates is not enough. You also need the right sample size, a fixed stopping rule, and a test whose error rates you have actually measured.
+
+---
+
+## Author
+
+**Satyam Katara** — Final-year B.Tech CSE (Data Science) student at Hindustan College of Science and Technology (HCST), Mathura.
+
+- GitHub: [satyam-katara](https://github.com/satyam-katara)
+- LinkedIn: [satyamkatara](https://www.linkedin.com/in/satyamkatara/)
+- Portfolio: [satyam-katara-portfolio.vercel.app](https://satyam-katara-portfolio.vercel.app)
 
 ---
 
