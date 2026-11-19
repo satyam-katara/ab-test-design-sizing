@@ -1,10 +1,8 @@
-<h1 align="center">A/B Test Design & Sizing</h1>
+<div align="center">
 
-<p align="center">
-  <em>How many users do you need, how long should you wait, and when can you trust the result?</em>
-</p>
+# A/B Test Design & Sizing
 
-<p align="center">
+**How many users do you need, how long should you wait, and when can you trust the result?**
 
 ![Python](https://img.shields.io/badge/Python-3.12%2B-blue?logo=python&logoColor=white)
 ![NumPy](https://img.shields.io/badge/NumPy-013243?logo=numpy&logoColor=white)
@@ -12,401 +10,433 @@
 ![SciPy](https://img.shields.io/badge/SciPy-8CAAE6?logo=scipy&logoColor=white)
 ![Matplotlib](https://img.shields.io/badge/Matplotlib-11557c)
 ![Jupyter](https://img.shields.io/badge/Jupyter-Notebook-F37626?logo=jupyter&logoColor=white)
-![Status](https://img.shields.io/badge/Status-Ready%20for%20review-blue)
+![Status](https://img.shields.io/badge/Status-Analysis%20Complete-blue)
 
-</p>
+</div>
 
 ---
 
-## TL;DR
+## The Short Version
 
-A new checkout page shows a higher conversion rate. Is it a real win or just luck?
+An e-commerce team wants to test a redesigned checkout page. They expect conversion to rise from **10% to 12%**. Before using any real traffic, this project works out how big the test must be, then runs thousands of simulated experiments to check whether the testing method can be trusted.
 
-This project sets up the test properly *before* any data is collected, then proves with simulation that the setup works.
+| Question | Answer |
+|---|---|
+| How many users are needed? | **3,839 per group** (7,678 total) |
+| How long should the test run? | Traffic fills the sample in 1.54 days, but run **at least 7 full days** to cover weekdays and weekends |
+| Does the standard fixed-sample test work as designed? | Yes, within simulation noise. **4.82%** false positives (target 5%) and **79.99%** power (target 80%) |
+| What if the team keeps checking and stops at the first "win"? | False positives rise to **17.36%**, about 3.6 times higher |
+| Can a simulation-calibrated OBF-shaped method control the false positives? | It brings the false-positive rate to **4.88%** in independent simulation, but power is **77.94%**, below the 80% target |
 
-- **Sample size:** 3,839 users per group (7,678 total) to detect a lift from 10% to 12%.
-- **Test quality:** In 10,000 simulated tests, the false-alarm rate was 4.78% (target: 5%) and the detection rate was 80.75% (target: 80%).
-- **Biggest risk:** Checking results every day and stopping at the first "significant" result pushed the false-alarm rate from about 5% to **17.68%**.
-- **Rule:** Fix the sample size and stop date in advance. Do not stop early.
+> [!IMPORTANT]
+> **Takeaway:** Decide the sample size and the stopping rule before launch. Do not stop a test early just because the p-value dips below 0.05.
+
+<details>
+<summary><b>Plain-English glossary</b></summary>
+
+| Term | Meaning |
+|---|---|
+| False positive | The test says "the new page is better" when it is not |
+| Power | The chance the test catches a real improvement of the planned size |
+| MDE (minimum detectable effect) | The smallest lift the test is built to detect |
+| Peeking | Checking results again and again, and stopping when they look good |
+| Sequential boundary | A stricter threshold at each interim check, so repeated looks stay honest |
+
+</details>
+
+---
+
+## Contents
+
+1. [Results at a Glance](#results-at-a-glance)
+2. [Business Problem](#business-problem)
+3. [Experiment Design](#experiment-design)
+4. [Sample Size and Duration](#sample-size-and-duration)
+5. [Synthetic Data](#synthetic-data)
+6. [Fixed-Sample Hypothesis Testing](#fixed-sample-hypothesis-testing)
+7. [The Peeking Problem](#the-peeking-problem)
+8. [OBF-Shaped Sequential Boundaries](#obf-shaped-sequential-boundaries)
+9. [Key Findings](#key-findings)
+10. [Recommendations](#recommendations)
+11. [Project Structure](#project-structure)
+12. [How to Run](#how-to-run)
+13. [Limitations](#limitations)
 
 ---
 
 ## Results at a Glance
 
-### Experiment Setup
+### Experiment setup
 
 | Item | Value |
 |---|---:|
 | Control conversion rate | 10% |
 | Variant conversion rate | 12% |
-| Smallest lift to detect (absolute) | 2 percentage points |
-| Smallest lift to detect (relative) | 20% |
+| Absolute MDE | 2 percentage points |
+| Relative lift | 20% |
 | Significance level (α) | 5% |
 | Target power | 80% |
 | Required users per group | 3,839 |
 | Total required users | 7,678 |
-| Minimum run time | 7 days |
+| Daily eligible traffic (both groups combined) | 5,000 |
+| Minimum operational run time | 7 days |
 
-### Simulation Results
+### Simulation results
 
-<table>
-<tr>
-<td align="center" width="33%">
-<h2>4.78%</h2>
-<strong>False-Alarm Rate</strong>
-<br/>
-<sub>10,000 simulations, no real difference</sub>
-<br/>
-<sub>95% CI: 4.36% – 5.20%</sub>
-</td>
-<td align="center" width="33%">
-<h2>80.75%</h2>
-<strong>Power</strong>
-<br/>
-<sub>10,000 simulations, real 2-point lift</sub>
-<br/>
-<sub>95% CI: 79.98% – 81.52%</sub>
-</td>
-<td align="center" width="33%">
-<h2>17.68%</h2>
-<strong>False-Alarm Rate With Peeking</strong>
-<br/>
-<sub>5,000 simulations, 8 checks</sub>
-<br/>
-<sub>95% CI: 16.62% – 18.74%</sub>
-</td>
-</tr>
-</table>
+| Method / scenario | Simulations | Est. false-positive rate | Est. power |
+|---|---:|---:|---:|
+| Fixed-sample test | 10,000 per scenario | 4.82% | 79.99% |
+| Naive peeking (8 checks) | 5,000 under the null | 17.36% | n/a |
+| Classical OBF-shaped boundary | As implemented in notebook | 6.58% | 81.42% |
+| Simulation-calibrated OBF-shaped boundary | 20,000 per evaluation scenario | 4.88% | 77.94% |
+
+### Method comparison
+
+The dashed line marks the 5% target. Naive peeking is well above it, while the simulation-calibrated OBF-shaped method is close to it in the independent evaluation.
+
+<p align="center">
+  <img src="figures/false_positive_rate_comparison.png" alt="False-positive rate across testing methods" width="760">
+  <br><sub><i>False-positive rate by testing method. Dashed line: 5% target.</i></sub>
+</p>
+
+The dashed line marks the 80% target. The calibrated OBF-shaped method controls false positives, but its estimated power falls short of the target.
+
+<p align="center">
+  <img src="figures/statistical_power_comparison.png" alt="Statistical power across testing methods" width="760">
+  <br><sub><i>Estimated power by testing method. Dashed line: 80% target.</i></sub>
+</p>
+
+### Simulation uncertainty
+
+Monte Carlo 95% intervals for the fixed-sample and peeking results:
+
+| Metric | 95% interval |
+|---|---:|
+| Fixed-sample false-positive rate | 4.40% – 5.24% |
+| Fixed-sample power | 79.21% – 80.77% |
+| Naive peeking false-positive rate | 16.31% – 18.41% |
 
 > [!NOTE]
-> Simulation results change a little every run. The confidence intervals above quantify Monte Carlo uncertainty around the estimated rates; they are calculated from the simulation counts and are generated in the notebook using a normal-approximation interval. The 5% target lies inside the false-alarm interval, and the 80% target lies inside the power interval, which is consistent with the design targets.
+> These intervals show how much the simulated rates move from run to run. They are not confidence intervals for a treatment effect in a real experiment.
 
----
-
-## Table of Contents
-
-1. [Business Problem](#business-problem)
-2. [Experiment Design](#experiment-design)
-3. [Sample Size and Duration](#sample-size-and-duration)
-4. [Synthetic Data](#synthetic-data)
-5. [Hypothesis Testing and Simulation](#hypothesis-testing-and-simulation)
-6. [The Peeking Problem](#the-peeking-problem)
-7. [Key Findings](#key-findings)
-8. [Recommendations](#recommendations)
-9. [Tech Stack](#tech-stack)
-10. [Project Structure](#project-structure)
-11. [How to Run](#how-to-run)
-12. [Limitations](#limitations)
-13. [Conclusion](#conclusion)
-14. [Author](#author)
+**Reading the table:** the fixed-sample results sit on the design targets within simulation noise. Power is 79.99%, a hair under the 80% target. Naive repeated testing inflates false positives badly. The calibrated OBF-shaped procedure holds false positives near 5% in its independent evaluation, but its power is under the 80% target for this setup.
 
 ---
 
 ## Business Problem
 
-An e-commerce company wants to test a redesigned checkout page.
-
 | Role | Description |
 |---|---|
 | **Control** | Current checkout page |
 | **Variant** | New checkout page |
-| **Main metric** | Conversion rate |
+| **Primary metric** | Conversion rate |
 
-The business hopes conversion goes from 10% to 12%. But a higher number in the variant group does not prove the new page is better. Random chance alone can create gaps.
+A higher conversion rate in the variant group does not prove the new page is better. Random variation can produce a gap even when both pages perform the same.
 
-Before launching, the team needs answers to five questions:
+Before launch, the team has to settle five things:
 
-- How many users do we need?
-- How long should the test run?
-- Is the observed difference real or random?
-- Will this test catch a real lift when one exists?
-- What goes wrong if we check results early and stop?
-
----
+- How many users are required?
+- How long should the experiment run?
+- How will the two conversion rates be compared?
+- How often will the test be checked?
+- What stopping rule keeps repeated checking from producing false wins?
 
 ## Experiment Design
-
-### Parameters
 
 | Parameter | Value |
 |---|---:|
 | Control conversion rate | 0.10 |
 | Variant conversion rate | 0.12 |
 | Significance level (α) | 0.05 |
-| Power (1 − β) | 0.80 |
-| Minimum detectable effect (MDE) | 0.02 |
+| Target power (1 − β) | 0.80 |
+| Absolute MDE | 0.02 |
 | Daily eligible traffic | 5,000 users |
-| Test type | Two-sided, two-proportion test |
-| Traffic split | 50% / 50% |
+| Test | Two-sided, two-proportion test |
+| Traffic allocation | 50% / 50% |
 
 ### Hypotheses
 
-- **Null (H₀):** Both pages convert at the same rate.
-- **Alternative (H₁):** The two pages convert at different rates.
+- **Null (H₀):** control and variant conversion rates are equal.
+- **Alternative (H₁):** the conversion rates are different.
 
-$$H_0: p_c = p_v \qquad\qquad H_1: p_c \neq p_v$$
+$$
+H_0: p_c = p_v \qquad H_1: p_c \ne p_v
+$$
 
-### Minimum Detectable Effect (MDE)
+### Minimum Detectable Effect
 
-The MDE is the smallest effect this experiment is designed to detect with the selected significance level (5%) and target power (80%). Whether a smaller effect is worth detecting is a separate business decision.
+The MDE is the smallest effect this experiment is built to detect at the chosen significance level and power. Whether a lift that small is worth shipping is a separate business call.
 
-$$MDE = 0.12 - 0.10 = 0.02$$
+$$
+\text{MDE} = 0.12 - 0.10 = 0.02
+$$
 
 - **Absolute lift:** 2 percentage points
-- **Relative lift:** 20%
-
----
+- **Relative lift:** 20% over the 10% baseline
 
 ## Sample Size and Duration
 
-Sample size uses the standard two-proportion formula (normal approximation) with a 5% significance level, 80% power, and a 10% baseline rate.
+The notebook uses a two-proportion sample-size calculation (normal approximation) with a two-sided 5% significance level and 80% power.
 
-### Sensitivity: Smaller Lifts Need Many More Users
+### Smaller lifts need far more users
 
-| Absolute MDE | Users per group | Total users | Days of traffic needed |
+| Absolute MDE | Users per group | Total users | Days at 5,000 users/day |
 |---|---:|---:|---:|
 | 1 percentage point | 14,749 | 29,498 | 5.90 |
 | **2 percentage points (selected)** | **3,839** | **7,678** | **1.54** |
 | 3 percentage points | 1,772 | 3,544 | 0.71 |
 
-Cutting the target lift in half roughly quadruples the sample needed. That is the main trade-off in test design.
+Halving the MDE from 2 points to 1 point nearly quadruples the required sample, from 7,678 to 29,498 users.
 
-### Selected Design
+### Selected design
 
-$$N_{total} = 3{,}839 \times 2 = 7{,}678$$
+$$
+N_{\text{total}} = 3{,}839 \times 2 = 7{,}678
+$$
 
-$$Duration = \frac{7{,}678}{5{,}000} \approx 1.54 \text{ days}$$
+$$
+\text{Traffic duration} = \frac{7{,}678}{5{,}000} \approx 1.54 \text{ days}
+$$
 
-### Why Run 7 Days and Not 1.54
+The 1.54-day figure only says how fast traffic fills the sample. It is not the recommended calendar duration.
 
-Traffic alone says 1.54 days is enough. But user behavior changes between weekdays and weekends. A test that covers only part of the week can give a biased answer.
+### Why run for at least 7 days?
 
-**Decision:** Run for at least 7 complete days **and** ensure the planned sample size has been reached before making the final decision.
+A test that covers only part of a week can over- or under-represent weekday and weekend behaviour. The recommendation is to run **7 complete days** and also reach the planned sample size before deciding.
 
-> [!IMPORTANT]
-> At 5,000 users per day, 7 days brings in about 35,000 users, far more than the 7,678 required. Two ways to handle this:
-> - **Limit the test to about 22% of daily traffic** (7,678 ÷ 35,000), so the test reaches its sample size at day 7.
-> - **Use all traffic for 7 days.** The test will then have more than 80% power, and can detect smaller lifts, but more users see an untested page.
->
-> Decide this before launch. Do not decide it after seeing results.
+At 5,000 eligible users a day, seven days gives about 35,000 users. There are two ways to use that:
 
----
+- Send roughly **22% of traffic** to the experiment, which reaches the planned 7,678 users over the week; or
+- Send all eligible traffic for seven days, accepting a larger-than-needed sample and wider exposure to the variant.
+
+Pick the allocation and the stopping rule before launch, not after seeing interim results.
 
 ## Synthetic Data
 
-The data is generated with random yes/no outcomes (Bernoulli trials) using known conversion rates. Because the true answer is known, we can check whether the testing method finds it.
+The notebook generates conversions as Bernoulli trials using the group probabilities below.
 
-| Group | Users | True conversion rate |
+| Group | Users | Generation probability |
 |---|---:|---:|
 | Control | 3,839 | 10% |
 | Variant | 3,839 | 12% |
-| **Total** | **7,678** | — |
+| **Total** | **7,678** | n/a |
 
 Output file: `data/simulated_ab_test_run.csv`
 
-Any single run will show rates a bit different from 10% and 12%. That is normal random variation, and it is the exact reason we run tests like this.
+In the notebook's current run, the observed results were:
 
----
+| Group | Users | Conversions | Observed conversion rate |
+|---|---:|---:|---:|
+| Control | 3,839 | 390 | 10.16% |
+| Variant | 3,839 | 429 | 11.17% |
 
-## Hypothesis Testing and Simulation
+Observed rates will not match the generation probabilities exactly. That gap is ordinary sampling noise, and it is the reason an experiment needs a statistical test and not a side-by-side comparison of percentages.
 
-One test result tells you very little about how good the method is. So the test is repeated thousands of times, and we count how often it is right or wrong.
+## Fixed-Sample Hypothesis Testing
 
-### Scenario A: No Real Difference
+One simulated experiment says little about how reliable a testing method is. The notebook repeats the test many times under two scenarios.
 
-Both groups convert at 10%.
+### Scenario A: no real difference
+
+Both groups convert at 10%. A well-behaved test should reject the null about 5% of the time.
 
 | Metric | Result |
 |---|---:|
 | Simulations | 10,000 |
 | Significance threshold | 0.05 |
-| False-alarm rate (Type I error) | **4.78%** |
+| Estimated false-positive rate (Type I error) | **4.82%** |
 
-This is how often the test wrongly says "there is a difference" when there is none. It should be close to 5%, and it is.
+### Scenario B: a real 2-point lift
 
-### Scenario B: Real 2-Point Lift
-
-Control converts at 10%, variant at 12%.
+Control converts at 10% and the variant at 12%.
 
 | Metric | Result |
 |---|---:|
 | Simulations | 10,000 |
 | True difference | 2 percentage points |
-| Power | **80.75%** |
+| Estimated power | **79.99%** |
 
-This is how often the test correctly finds the real lift. It should be close to 80%, and it is.
+At 80% power, a test still misses a real effect in roughly 1 of every 5 repeated experiments.
 
-### Reading the P-value Charts
+> [!NOTE]
+> The estimated power is 79.99%, marginally below the 80% target. The gap is far smaller than the simulation error, so the design is treated as meeting its target. It is reported as measured, not rounded up.
 
-- **No real difference:** p-values spread out evenly between 0 and 1.
-- **Real difference:** p-values bunch up near 0.
+### P-value distributions
 
----
+The chart compares p-values from the no-effect scenario (10% vs 10%) with the scenario containing a 2-point lift (10% vs 12%). The dashed line marks the 0.05 threshold. With no effect, p-values spread evenly between 0 and 1, so about 5% fall below 0.05. With a real lift, they bunch up near zero.
+
+<p align="center">
+  <img src="figures/p_value_distributions.png" alt="P-value distributions with and without a real effect" width="760">
+  <br><sub><i>Simulated p-values, no effect vs 2-point lift. Dashed line: 0.05 threshold.</i></sub>
+</p>
 
 ## The Peeking Problem
 
-### What Is Peeking?
+Peeking means checking the p-value again and again and stopping as soon as it falls below 0.05, even though the test was designed for one final look. Every extra check is another chance to get a false win, so the overall false-positive rate climbs.
 
-Peeking means checking results again and again during the test and stopping the first time the p-value drops below 0.05.
-
-Each check is another chance to be fooled by luck. The more checks, the higher the chance of a false win.
-
-### Simulation Setup
+### Setup and result
 
 | Parameter | Value |
 |---|---:|
-| Control conversion rate | 10% |
-| Variant conversion rate | 10% (no real difference) |
+| Control conversion probability | 10% |
+| Variant conversion probability (no effect) | 10% |
 | Simulations | 5,000 |
-| Checks per test | 8 |
-| Threshold per check | 0.05 |
-| False-alarm rate | **17.68%** |
+| Significance checks per test | 8 |
+| Threshold at each check | 0.05 |
+| Estimated false-positive rate | **17.36%** |
 
-### Comparison
-
-| Approach | False-alarm rate |
+| Approach | Estimated false-positive rate |
 |---|---:|
-| Check once at the planned end | 4.78% |
-| Check 8 times and stop at the first "win" | 17.68% |
+| One planned final check | 4.82% |
+| Eight unadjusted checks, stop at first significant result | 17.36% |
 
-Under the no-effect scenario, eight unadjusted interim checks increased the experiment-level false-alarm rate from 4.78% to 17.68% (about 3.7 times higher). This means that, when there is truly no difference, approximately 17.68% of experiments using this peeking procedure would incorrectly declare a statistically significant result. It does **not** mean that 17.68% of all observed winning tests are false wins.
+Peeking raised the false-positive rate from 4.82% to 17.36%, about 3.6 times higher.
 
 > [!WARNING]
-> If the team must check results early, use a method built for it, such as sequential testing or alpha spending. These adjust the threshold at each check so the overall false-alarm rate stays at 5%.
+> This is the share of simulated **no-effect** experiments that wrongly declared a winner. It is not the share of all observed winning tests that are false.
 
----
+If interim monitoring is required, use a sequential procedure (boundaries or alpha spending) built to control the overall Type I error rate.
+
+## OBF-Shaped Sequential Boundaries
+
+The notebook also explores an **O'Brien-Fleming-shaped (OBF-shaped) boundary** across eight interim looks. Early looks need very strong evidence to stop, and the bar relaxes toward the planned final sample. Two versions are compared:
+
+1. A classical OBF-shaped boundary
+2. A simulation-calibrated OBF-shaped boundary
+
+| Method | Est. false-positive rate | Est. power |
+|---|---:|---:|
+| Classical OBF-shaped | 6.58% | 81.42% |
+| Simulation-calibrated OBF-shaped | 4.88% | 77.94% |
+
+**Calibration:** 100,000 simulations gave a boundary constant of **2.0814**, with a calibration false-positive rate of 5.00%.
+
+**Independent evaluation:** the calibrated boundary was then tested on fresh simulations, 20,000 per scenario.
+
+- False-positive rate (10% vs 10%): **4.88%**
+- Power (10% vs 12%): **77.94%**
+
+The separate evaluation matters. A boundary tuned on one set of simulations will always look good on that same set, so the honest number is the one from the fresh run.
+
+> [!NOTE]
+> **Methodology:** this is an OBF-shaped, simulation-calibrated exploration, not a fully validated standard O'Brien-Fleming group-sequential design. Estimated power is below the 80% target in this evaluation. The per-look nominal alpha values in the notebook are the two-sided normal-tail probabilities implied by each boundary. They are not separate, independent alpha allocations.
+
+### Calibrated boundary
+
+The chart shows the simulation-calibrated OBF-shaped stopping boundary across the planned interim looks. Early looks need much stronger evidence to stop than later ones.
+
+<p align="center">
+  <img src="figures/calibrated_obf_boundaries.png" alt="Calibrated OBF-shaped boundaries" width="760">
+  <br><sub><i>Calibrated OBF-shaped stopping boundary across eight interim looks.</i></sub>
+</p>
 
 ## Key Findings
 
-1. **Smaller lifts need far more users.** Halving the lift roughly quadruples the sample size.
-2. **The test is only as good as its power.** At 80% power, 1 in 5 real wins will still be missed. This is a choice, not a flaw.
-3. **The method holds up.** Simulated false-alarm rate (4.78%) and power (80.75%) both match the design targets.
-4. **Calendar time matters as much as sample size.** A full weekly cycle protects against day-of-week bias.
-5. **Peeking is costly.** Eight unadjusted checks increased the false-alarm rate by more than threefold (3.7×).
-6. **Simulation is a useful check.** With known ground truth, you can test the method itself, not just the data.
-
----
+1. **Smaller effects need much larger samples.** Detecting a 1-point lift takes about 3.8 times the users needed for a 2-point lift.
+2. **The fixed-sample design lands on target within simulation noise.** False positives are 4.82%. Power is 79.99%, which is 0.01 points under the 80% target. With 10,000 simulations (about ±0.8 points), that cannot be told apart from 80%.
+3. **Naive peeking inflates false positives.** Eight unadjusted checks gave 17.36% in the no-effect scenario.
+4. **Sequential boundaries need validation.** The classical OBF-shaped boundary gave 6.58% false positives. Calibration brought that to 4.88% in independent testing, at the cost of power (77.94%).
+5. **Calendar time matters.** Hitting the sample-size target does not guarantee that weekday and weekend patterns are covered.
+6. **Simulation tests the method, not just the data.** With known ground truth, false-positive rates and power can be measured directly.
 
 ## Recommendations
 
-If this were a real test, I would:
+For a real experiment:
 
-- **Write the plan before launch:** metric, lift, sample size, run time, and stop rule, all fixed in advance (see `test-plan-template.md`).
-- **Meet both stopping conditions:** run for at least 7 complete days and reach the pre-specified sample size. With approximately 22% traffic allocation, the target sample is reached around day 7. With all traffic, the sample will be larger than required after 7 days.
-- **Check the traffic split first.** If a 50/50 split comes out as 52/48, something is broken in assignment and the result cannot be trusted.
-- **Report the size of the lift with a confidence interval,** not just "significant or not."
-- **Block early looks** unless a sequential method is in place.
+- Write down the primary metric, hypothesis, MDE, sample size, traffic allocation, analysis method and stopping rule **before launch**.
+- Run for at least seven complete days and reach the planned sample size.
+- Check that the 50/50 split held, and look into any sample-ratio mismatch before reading results.
+- Report the estimated effect with a confidence interval, not only a p-value.
+- Do not apply an ordinary 0.05 test repeatedly and stop at the first significant result.
+- If interim decisions are needed, choose and validate a sequential procedure before the test starts.
 
----
-
-## Tech Stack
-
-| Tool | Use |
-|---|---|
-| Python | Core programming |
-| NumPy | Random data and simulation |
-| Pandas | Data handling |
-| SciPy | Statistical tests |
-| Matplotlib | Charts |
-| Jupyter Notebook | Interactive analysis |
-
----
+A reusable planning document is included as [`test-plan-template.md`](test-plan-template.md).
 
 ## Project Structure
 
 ```text
 ab-test-design-sizing/
-│
 ├── data/
-│   └── simulated_ab_test_run.csv   # Simulated experiment data
-│
-├── ab_test_sizing.ipynb            # Main analysis notebook
-├── test-plan-template.md           # Reusable A/B test plan template
-├── requirements.txt                # Python dependencies
+│   └── simulated_ab_test_run.csv   # generated by the notebook
+├── figures/
+│   ├── p_value_distributions.png
+│   ├── calibrated_obf_boundaries.png
+│   ├── false_positive_rate_comparison.png
+│   └── statistical_power_comparison.png
+├── ab_test_sizing.ipynb            # full analysis
+├── test-plan-template.md           # reusable pre-launch test plan
+├── requirements.txt
 ├── README.md
 └── .gitignore
 ```
 
----
+The CSV is created when the notebook runs. It is kept in the repo so readers can inspect the example data without running anything.
 
 ## How to Run
 
-### Requirements
+**Requirements:** Python 3.12 or newer, Git, and Jupyter Notebook (or VS Code with the Jupyter extension).
 
-- Python 3.12 or newer
-- Git
-- Jupyter Notebook, or VS Code with the Jupyter extension
-
-### Steps
-
-**1. Get the project files**
+**1. Get the files**
 
 ```bash
 git clone https://github.com/satyam-katara/ab-test-design-sizing.git
 cd ab-test-design-sizing
 ```
 
-If you already have the project folder locally, open that folder and continue with the next step.
+**2. Create a virtual environment (optional)**
 
-**2. Create a virtual environment**
+<details>
+<summary>Windows PowerShell</summary>
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+</details>
+
+<details>
+<summary>macOS / Linux</summary>
 
 ```bash
 python -m venv .venv
+source .venv/bin/activate
 ```
 
-**3. Activate it**
+</details>
 
-| System | Command |
-|---|---|
-| Windows (PowerShell) | `.\.venv\Scripts\Activate.ps1` |
-| macOS / Linux | `source .venv/bin/activate` |
-
-**4. Install dependencies**
+**3. Install dependencies**
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
-**5. Start Jupyter and open the notebook**
+**4. Launch Jupyter**
 
 ```bash
 jupyter notebook
 ```
 
-Open `ab_test_sizing.ipynb` and run the cells from top to bottom.
-
----
+Open `ab_test_sizing.ipynb` and run the cells from top to bottom. The notebook creates the `data/` and `figures/` folders, writes `simulated_ab_test_run.csv` into `data/`, and saves the four chart images into `figures/`.
 
 ## Limitations
 
-- **Simulation project, not a live experiment.** The checkout example and traffic assumptions are illustrative; no real users or production checkout page were tested.
-- **Synthetic data.** Real users are messier than random coin flips.
-- **Approximate formula.** Sample size uses a normal approximation, which is less accurate for very low conversion rates or small samples.
-- **Simulation noise.** Estimated rates shift slightly every run. The confidence intervals shown above quantify Monte Carlo uncertainty in those estimated rates; they are not confidence intervals for the treatment effect in a real experiment.
-- **Missing real-world issues.** Seasonality, sample ratio mismatch, and users who appear more than once are not modeled.
-- **Seven days is a rule of thumb.** It does not remove every possible bias, such as holidays or campaigns running during the test.
+- **Illustrative scenario.** The checkout example and traffic numbers are synthetic. No real users or production page were tested.
+- **Synthetic outcomes.** Bernoulli conversions do not capture real user behaviour, dependence between users, or repeat visits.
+- **Approximate sample-size formula.** It uses a normal approximation. Other methods may suit very small samples or rare conversion events better.
+- **Monte Carlo noise.** Simulation estimates change with the random draw. The reported intervals describe that noise, not a treatment effect.
+- **Sequential method scope.** The OBF-shaped calibration is an educational exercise, not a replacement for a fully specified and independently validated group-sequential design.
+- **Real-world factors not modelled.** Seasonality, holidays, marketing campaigns, sample-ratio mismatch, tracking errors and repeat users.
+- **Seven days is a practical minimum, not a guarantee.** Low-traffic products or unusual calendar effects may need longer.
 
 ---
 
-## Conclusion
+<div align="center">
 
-A good A/B test is decided before the data arrives. This project covers the full path: sizing the test, generating data, running the hypothesis test, checking it with 10,000 simulations, and showing how peeking breaks it.
+**A/B Test Design & Sizing**
 
-The main lesson: comparing two conversion rates is not enough. You also need the right sample size, a fixed stopping rule, and a test whose error rates you have actually measured.
+*Plan the test first. Trust the result second.*
 
----
+Built by Katara · [GitHub](https://github.com/satyam-katara)
 
-## Author
-
-**Satyam Katara** — Final-year B.Tech CSE (Data Science) student at Hindustan College of Science and Technology (HCST), Mathura.
-
-- GitHub: [satyam-katara](https://github.com/satyam-katara)
-- LinkedIn: [satyamkatara](https://www.linkedin.com/in/satyamkatara/)
-- Portfolio: [satyam-katara-portfolio.vercel.app](https://satyam-katara-portfolio.vercel.app)
-
----
-
-<p align="center">
-  <strong>A/B Test Design & Sizing</strong><br/>
-  <em>Plan the test first. Trust the result second.</em>
-</p>
+</div>

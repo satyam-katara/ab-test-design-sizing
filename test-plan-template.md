@@ -150,12 +150,18 @@ A statistically significant result does not by itself establish that the change 
 
 ## Project Simulation Reference
 
-The companion notebook uses synthetic data to demonstrate the design and operating characteristics. Its recorded simulation results are:
+The companion notebook uses synthetic data to demonstrate the experiment design and evaluate the testing procedures.
 
-| Scenario | Simulations | Result |
+| Scenario / Method | Simulations | Result |
 |---|---:|---:|
-| Null: 10% vs 10% | 10,000 | 4.78% false-alarm rate |
-| Alternative: 10% vs 12% | 10,000 | 80.75% estimated power |
-| Null with 8 unadjusted interim checks | 5,000 | 17.68% false-alarm rate |
+| Fixed-sample test under null (10% vs 10%) | 10,000 | 4.82% false-positive rate |
+| Fixed-sample test under alternative (10% vs 12%) | 10,000 | 79.99% estimated power |
+| Naive peeking (8 unadjusted checks) | 5,000 | 17.36% false-positive rate |
+| Classical OBF-shaped boundary | As implemented in notebook | 6.58% FPR, 81.42% power |
+| Simulation-calibrated OBF-shaped boundary | 20,000 per evaluation scenario | 4.88% FPR, 77.94% power |
 
-These are simulation results under the stated assumptions, not results from a live product experiment.
+The calibrated boundary used 100,000 simulations and a boundary constant of 2.0814. Its performance was then evaluated using separate simulations.
+
+**Important:** The OBF-shaped calibration is an educational simulation exercise, not a fully validated standard O'Brien-Fleming group-sequential design. Its estimated power is below the 80% target.
+
+These are simulation results under the stated assumptions, not results from a live product experiment. Results may vary slightly when simulations are rerun.
